@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1a3a0f">
+<title>Terrain</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+:root {
+  --forest:#1a3a0f; --moss:#2d5a1b; --fern:#4a7c35; --sage:#7aad5a;
+  --mist:#b8d4a0; --cream:#f0ebe0; --bark:#5c3d1e; --stone:#8a8070;
+  --ink:#0d1a09; --snow:#f8f5ee; --alert:#c84b1a; --info:#2196f3;
+  --panel-bg:#111f0a; --header-h:54px; --radius:10px;
+  --transition:.2s cubic-bezier(.4,0,.2,1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:var(--sans);background:var(--ink);color:var(--cream)}
+#header{position:fixed;top:0;left:0;right:0;z-index:1000;height:var(--header-h);background:linear-gradient(135deg,var(--forest),#0d2208);border-bottom:1px solid var(--moss);display:flex;align-items:center;box-shadow:0 2px 20px rgba(0,0,0,.5)}
+#logo{display:flex;align-items:center;gap:8px;padding:0 14px;font-family:var(--mono);font-size:1.05rem;font-weight:700;color:var(--sage);letter-spacing:.04em;flex-shrink:0}
+#tab-bar{display:flex;height:100%;flex:1;border-left:1px solid rgba(255,255,255,.07)}
+.tab-btn{display:flex;align-items:center;gap:6px;padding:0 16px;font-size:.82rem;font-weight:500;color:var(--stone);cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;transition:var(--transition)}
+.tab-btn:hover{color:var(--mist);background:rgba(255,255,255,.04)}
+.tab-btn.active{color:var(--sage);border-bottom-color:var(--sage);background:rgba(74,124,53,.08)}
+#app{position:fixed;top:var(--header-h);left:0;right:0;bottom:0;overflow:hidden}
+.panel{display:none;width:100%;height:100%;overflow-y:auto}
+.panel.active{display:block}
+
+/* ── Écran d'accueil (liste des circuits) ───────────────── */
+#circuits-home{padding:16px;max-width:640px;margin:0 auto}
+.section-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--stone);margin:18px 0 8px}
+#add-circuit-box{background:var(--panel-bg);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:14px}
+#add-circuit-box p{font-size:.78rem;color:var(--stone);line-height:1.5;margin-bottom:10px}
+.field-row{display:flex;gap:8px}
+#circuit-url-input{flex:1;padding:10px 12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--cream);font-family:var(--mono);font-size:.8rem}
+#circuit-url-input:focus{outline:none;border-color:var(--fern)}
+.btn{padding:10px 16px;border-radius:20px;border:none;font-size:.82rem;font-weight:600;cursor:pointer;font-family:var(--sans);background:var(--moss);color:var(--snow);transition:var(--transition)}
+.btn:hover{background:var(--fern)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn-mini{padding:7px 12px;font-size:.75rem;border-radius:16px}
+.btn-danger{background:transparent;color:var(--alert);border:1px solid var(--alert)}
+.btn-danger:hover{background:rgba(200,75,26,.15)}
+#dl-progress{display:none;margin-top:12px}
+#dl-progress-label{font-size:.72rem;color:var(--mist);font-family:var(--mono);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dl-progress-bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+#dl-progress-fill{height:100%;width:0;background:var(--sage);transition:width .25s}
+#dl-progress-pct{font-size:.68rem;color:var(--stone);font-family:var(--mono);margin-top:3px;text-align:right}
+
+.empty-hint{color:var(--stone);font-size:.82rem;padding:20px 4px}
+#circuits-list{display:flex;flex-direction:column;gap:8px}
+.circuit-card{display:flex;align-items:center;gap:12px;background:var(--panel-bg);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:10px;transition:var(--transition)}
+.circuit-card:hover{border-color:var(--fern)}
+.circuit-thumb{width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--moss);display:flex;align-items:center;justify-content:center}
+.circuit-thumb img{width:100%;height:100%;object-fit:cover}
+.circuit-thumb-ph{font-size:1.5rem}
+.circuit-info{flex:1;min-width:0}
+.circuit-title{font-size:.9rem;font-weight:600;color:var(--cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.circuit-meta{font-size:.7rem;color:var(--stone);font-family:var(--mono);margin-top:2px}
+.circuit-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+
+/* ── Visionneuse de circuit (plein écran, façon diaporama terrain) ── */
+#circuit-viewer{display:none;flex-direction:column;height:100%;background:#000}
+#cv-topbar{position:absolute;top:0;left:0;right:0;z-index:600;display:flex;align-items:center;gap:8px;padding:8px 10px;background:linear-gradient(rgba(0,0,0,.75),transparent)}
+#cv-back{background:rgba(0,0,0,.4);border:none;color:var(--mist);border-radius:16px;padding:6px 12px;font-size:.78rem;cursor:pointer}
+#cv-title{flex:1;font-size:.82rem;font-weight:600;color:var(--sage);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cv-gps-status{font-family:var(--mono);font-size:.68rem;color:var(--sage);white-space:nowrap}
+#cv-hud-msg{position:absolute;top:44px;left:0;right:0;z-index:600;text-align:center;font-size:.72rem;color:var(--mist);font-family:var(--mono)}
+#cv-map-wrap{flex:0 0 38vh;position:relative;min-height:0;transition:flex-basis .3s ease}
+body.cv-zoomed #cv-map-wrap{flex-basis:9vh}
+#cv-map{width:100%;height:100%}
+#cv-photo-wrap{flex:1 1 auto;min-height:0;position:relative;background:#0a0f07;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#cv-photo{max-width:100%;max-height:100%;object-fit:contain;display:none;cursor:pointer}
+#cv-no-photo{font-size:4.5rem;opacity:.15}
+#cv-zoom-btn{position:absolute;top:8px;right:10px;z-index:20;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:var(--mist);font-size:.9rem;cursor:pointer}
+#cv-info-bar{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.92));padding:12px 14px;max-height:42%;overflow-y:auto}
+#cv-wp-name{font-family:var(--mono);font-size:.92rem;font-weight:700;color:var(--sage);margin-bottom:3px}
+#cv-wp-comment{font-size:.78rem;color:var(--mist);line-height:1.5;white-space:pre-line}
+#cv-audio{width:100%;margin-top:6px;display:none;height:32px}
+#cv-video{width:100%;max-height:130px;margin-top:6px;display:none;border-radius:6px}
+#cv-controls{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));background:#0d1a09;border-top:1px solid rgba(255,255,255,.08)}
+.ctrl-btn{padding:12px 16px;border-radius:22px;border:none;font-size:.8rem;font-weight:600;cursor:pointer;font-family:var(--sans)}
+.ctrl-btn:disabled{opacity:.35;cursor:default}
+#cv-prev,#cv-next{background:rgba(255,255,255,.14);color:var(--mist);min-width:60px}
+#cv-tts{background:rgba(74,124,53,.9);color:var(--snow);flex:1}
+#cv-counter{font-family:var(--mono);font-size:.7rem;color:var(--stone);margin-left:auto;white-space:nowrap}
+
+.wp-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:var(--bark);border:2px solid var(--snow);transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;color:var(--snow);font-family:var(--mono);font-size:.68rem;font-weight:700}
+.wp-pin::after{content:'';display:block;transform:rotate(45deg)}
+.gps-dot{position:absolute;top:0;left:0;width:16px;height:16px;background:var(--info);border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.5)}
+.gps-pulse{position:absolute;top:0;left:0;width:16px;height:16px;border-radius:50%;background:var(--info);opacity:.55;animation:gps-pulse-anim 1.8s ease-out infinite}
+@keyframes gps-pulse-anim{0%{transform:scale(1);opacity:.55}100%{transform:scale(3.2);opacity:0}}
+.ma-trail{stroke-linecap:round;animation:ma-fw .55s linear infinite}
+@keyframes ma-fw{to{stroke-dashoffset:-22}}
+
+/* ── Générateur ───────────────────────────────────────────── */
+#gen-panel-inner{padding:16px;max-width:640px;margin:0 auto}
+.gen-box{background:var(--panel-bg);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:14px;margin-bottom:14px}
+.gen-box h3{font-size:.8rem;color:var(--sage);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.gen-box p.hint{font-size:.75rem;color:var(--stone);line-height:1.5;margin-bottom:10px}
+.file-drop{border:2px dashed var(--moss);border-radius:8px;padding:16px 10px;text-align:center;cursor:pointer;transition:var(--transition);background:rgba(45,90,27,.06)}
+.file-drop:hover{border-color:var(--sage);background:rgba(74,124,53,.1)}
+.file-drop input{display:none}
+.file-drop .drop-icon{font-size:1.6rem;margin-bottom:4px}
+.file-drop p{font-size:.76rem;color:var(--stone)}
+.file-info{margin-top:8px;font-size:.74rem;color:var(--mist);font-family:var(--mono)}
+.form-input{width:100%;padding:9px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:var(--cream);font-family:var(--sans);font-size:.85rem}
+.form-input:focus{outline:none;border-color:var(--fern)}
+.form-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--stone);display:block;margin-bottom:5px}
+#gen-log{margin-top:10px;font-family:var(--mono);font-size:.72rem;color:var(--mist);white-space:pre-wrap;max-height:140px;overflow-y:auto;background:rgba(0,0,0,.25);border-radius:6px;padding:8px;display:none}
+.instructions{background:rgba(255,255,255,.03);border-radius:var(--radius);padding:14px;font-size:.78rem;color:var(--stone);line-height:1.7}
+.instructions code{font-family:var(--mono);background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;color:var(--mist)}
+.instructions ol{padding-left:18px;margin-top:6px}
+
+/* ── Toast / modal photo ──────────────────────────────────── */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--moss);color:var(--snow);padding:10px 18px;border-radius:20px;font-size:.82rem;z-index:3000;opacity:0;pointer-events:none;transition:opacity .25s;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#toast.show{opacity:1}
+#toast.error{background:var(--alert)}
+#modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:4000;display:none;align-items:center;justify-content:center}
+#modal-overlay.open{display:flex}
+#modal-img{max-width:94%;max-height:94%;object-fit:contain}
+#modal-close{position:absolute;top:14px;right:18px;font-size:1.6rem;color:#fff;background:none;border:none;cursor:pointer}
+
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:var(--moss);border-radius:3px}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="logo">🥾 Terrain</div>
+  <div id="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('suivi-panel')">🧭 Suivi</button>
+    <button class="tab-btn" onclick="switchTab('gen-panel')">🛠️ Générer un circuit</button>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- ── Onglet Suivi (accueil circuits + visionneuse) ───────── -->
+  <div id="suivi-panel" class="panel active">
+
+    <div id="circuits-home">
+      <div id="add-circuit-box">
+        <p>Colle le lien d'un circuit publié (dossier déployé sur un hébergement statique) pour le télécharger et pouvoir le suivre <strong>sans réseau</strong> ensuite.</p>
+        <div class="field-row">
+          <input id="circuit-url-input" type="text" placeholder="https://…/mon-circuit/" autocomplete="off">
+          <button class="btn" onclick="trOnAddClick()">⬇️ Charger</button>
+        </div>
+        <div id="dl-progress">
+          <div id="dl-progress-label">…</div>
+          <div id="dl-progress-bar"><div id="dl-progress-fill"></div></div>
+          <div id="dl-progress-pct">0%</div>
+        </div>
+      </div>
+
+      <div class="section-title">Circuits disponibles hors-ligne</div>
+      <div id="circuits-list"><p class="empty-hint">Aucun circuit chargé pour l'instant.</p></div>
+    </div>
+
+    <div id="circuit-viewer">
+      <div id="cv-topbar">
+        <button id="cv-back" onclick="trCloseViewer()">← Circuits</button>
+        <div id="cv-title"></div>
+        <div id="cv-gps-status"></div>
+      </div>
+      <div id="cv-hud-msg"></div>
+      <div id="cv-map-wrap"><div id="cv-map"></div></div>
+      <div id="cv-photo-wrap">
+        <img id="cv-photo" alt="" onclick="openModal(this.src)">
+        <div id="cv-no-photo">🥾</div>
+        <button id="cv-zoom-btn" onclick="toggleCvZoom()">⤢</button>
+        <div id="cv-info-bar">
+          <div id="cv-wp-name"></div>
+          <div id="cv-wp-comment"></div>
+          <audio id="cv-audio" controls></audio>
+          <video id="cv-video" controls playsinline></video>
+        </div>
+      </div>
+      <div id="cv-controls">
+        <button id="cv-prev" class="ctrl-btn" onclick="trPrev()">◀ Préc.</button>
+        <button id="cv-tts" class="ctrl-btn" onclick="trReadComment()">🔊 Lire</button>
+        <button id="cv-next" class="ctrl-btn" onclick="trNext()">Suiv. ▶</button>
+        <span id="cv-counter"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Onglet Générateur ────────────────────────────────────── -->
+  <div id="gen-panel" class="panel">
+    <div id="gen-panel-inner">
+
+      <div class="gen-box">
+        <h3>1. Session geotour (.kmz)</h3>
+        <p class="hint">Depuis geotour, onglet Édition → <strong>💾 Sauvegarder la session en KMZ</strong>. Ce fichier contient les waypoints, photos, commentaires, audio/vidéo et le tracé.</p>
+        <div class="file-drop" onclick="document.getElementById('gen-kmz-input').click()">
+          <div class="drop-icon">📦</div>
+          <p><strong>Choisir le fichier .kmz</strong></p>
+          <input id="gen-kmz-input" type="file" accept=".kmz" onchange="genOnKmzFile(this.files[0])">
+        </div>
+        <div id="gen-kmz-info" class="file-info"></div>
+      </div>
+
+      <div class="gen-box">
+        <h3>2. Fond orthophoto (.mbtiles) — optionnel</h3>
+        <p class="hint">Produit avec le générateur MBtiles de geotour (ou ign2mbt). Sera découpé automatiquement en fragments de ≤19 Mo pour le déploiement.</p>
+        <div class="file-drop" onclick="document.getElementById('gen-mbtiles-input').click()">
+          <div class="drop-icon">🛰️</div>
+          <p><strong>Choisir le fichier .mbtiles</strong></p>
+          <input id="gen-mbtiles-input" type="file" accept=".mbtiles" onchange="genOnMbtilesFile(this.files[0])">
+        </div>
+        <div id="gen-mbtiles-info" class="file-info"></div>
+      </div>
+
+      <div class="gen-box">
+        <h3>3. Titre du circuit</h3>
+        <input id="gen-titre" class="form-input" type="text" placeholder="Ex. Falaise de Rolleville">
+      </div>
+
+      <div class="gen-box">
+        <h3>4. Générer le paquet</h3>
+        <p class="hint">Produit une archive .zip prête à déployer sur un hébergement statique (dossier dédié).</p>
+        <button id="gen-btn-build" class="btn" style="width:100%" onclick="genBuildPackage()" disabled>📦 Générer le paquet (.zip)</button>
+        <div id="gen-log"></div>
+      </div>
+
+      <div class="instructions">
+        <strong>Déploiement et usage</strong>
+        <ol>
+          <li>Dézippe l'archive générée dans un dossier dédié (ex. <code>mon-circuit/</code>).</li>
+          <li>Dépose ce dossier sur un hébergement statique (GitHub Pages, Netlify, Cloudflare Pages…), à une URL du type <code>https://mon-site.tld/mon-circuit/</code>.</li>
+          <li>Dans l'onglet <strong>🧭 Suivi</strong>, colle cette URL pour télécharger le circuit — ou partage directement le lien <code>…/terrain/?circuit=https://mon-site.tld/mon-circuit/</code> pour un chargement automatique.</li>
+          <li>Une fois le téléchargement terminé (en ligne), le circuit reste disponible <strong>sans aucun réseau</strong> tant que l'app n'est pas désinstallée ou le circuit supprimé.</li>
+        </ol>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+<div id="modal-overlay" onclick="closeModal(event)">
+  <button id="modal-close" onclick="closeModal(event)">×</button>
+  <img id="modal-img" alt="">
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/sql-wasm.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script>
+// ── Utilitaires génériques ──────────────────────────────────
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function sanitize(s){ return String(s).replace(/[^a-zA-Z0-9_-]/g,'_').toLowerCase(); }
+let _toastTimer=null;
+function toast(msg, type=''){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show'+(type?(' '+type):'');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>{ el.classList.remove('show'); }, 3200);
+}
+function openModal(src){ document.getElementById('modal-img').src=src; document.getElementById('modal-overlay').classList.add('open'); }
+function closeModal(e){ if(!e||e.target===document.getElementById('modal-overlay')||e.target===document.getElementById('modal-close')) document.getElementById('modal-overlay').classList.remove('open'); }
+function switchTab(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  event.target.closest('.tab-btn').classList.add('active');
+}
+
+let _sqlJsPromise=null;
+function trLoadSqlJs(){
+  if(!_sqlJsPromise){ _sqlJsPromise = initSqlJs({ locateFile: f => 'vendor/'+f }); }
+  return _sqlJsPromise;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARTIE "SUIVI" — gestion des circuits téléchargés + visionneuse
+// ══════════════════════════════════════════════════════════════
+
+const IDB_NAME='terrain-db', IDB_STORE='circuits';
+function trIdb(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded=()=>{ req.result.createObjectStore(IDB_STORE,{keyPath:'slug'}); };
+    req.onsuccess=()=>res(req.result);
+    req.onerror=()=>rej(req.error);
+  });
+}
+async function trIdbPut(record){ const db=await trIdb(); return new Promise((res,rej)=>{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).put(record); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+async function trIdbGetAll(){ const db=await trIdb(); return new Promise((res,rej)=>{ const tx=db.transaction(IDB_STORE,'readonly'); const r=tx.objectStore(IDB_STORE).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function trIdbDelete(slug){ const db=await trIdb(); return new Promise((res,rej)=>{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).delete(slug); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+
+function trSlug(url){ return String(url).replace(/^https?:\/\//,'').replace(/[^a-zA-Z0-9_-]/g,'_').toLowerCase().slice(0,80); }
+function trCacheName(slug){ return 'terrain-circuit-'+slug; }
+function trNormalizeBase(url){
+  url=String(url).trim();
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  if(!url.endsWith('/')) url+='/';
+  return url;
+}
+function trFetchJSON(url){ return fetch(url).then(r=>{ if(!r.ok) throw new Error('Fichier introuvable : '+url); return r.json(); }); }
+function trBlobToDataUrl(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); }); }
+
+function trShowProgress(show){ document.getElementById('dl-progress').style.display = show?'block':'none'; }
+function trProgress(label, done, total){
+  document.getElementById('dl-progress-label').textContent = label;
+  const pct = total? Math.round(done/total*100):0;
+  document.getElementById('dl-progress-fill').style.width = pct+'%';
+  document.getElementById('dl-progress-pct').textContent = pct+'%';
+}
+
+function trOnAddClick(){
+  const val=document.getElementById('circuit-url-input').value.trim();
+  if(!val){ toast('Colle d\'abord un lien de circuit','error'); return; }
+  trAddCircuit(val);
+}
+
+async function trAddCircuit(rawUrl){
+  const baseUrl=trNormalizeBase(rawUrl);
+  const slug=trSlug(baseUrl);
+  trShowProgress(true);
+  trProgress('Lecture du manifeste…',0,1);
+  try{
+    const manifest = await trFetchJSON(baseUrl+'manifest.json');
+    const waypoints = await trFetchJSON(baseUrl+'waypoints.json');
+    let track=[]; try{ track = await trFetchJSON(baseUrl+'track.json'); }catch(e){}
+    let mbManifest=null; try{ mbManifest = await trFetchJSON(baseUrl+'mbtiles/manifest.json'); }catch(e){}
+
+    const files=['manifest.json','waypoints.json'];
+    if(track && track.length) files.push('track.json');
+    waypoints.forEach(wp=>{
+      if(wp.photo) files.push(wp.photo);
+      if(wp.audio) files.push(wp.audio);
+      if(wp.video) files.push(wp.video);
+    });
+    if(mbManifest){
+      files.push('mbtiles/manifest.json');
+      for(let i=0;i<mbManifest.chunkCount;i++) files.push('mbtiles/chunk_'+String(i).padStart(3,'0')+'.bin');
+    }
+    const uniqueFiles=[...new Set(files)];
+
+    const cache = await caches.open(trCacheName(slug));
+    let vignetteDataUrl=null;
+
+    for(let i=0;i<uniqueFiles.length;i++){
+      const f=uniqueFiles[i];
+      trProgress('Téléchargement… '+f, i, uniqueFiles.length);
+      const resp = await fetch(baseUrl+f);
+      if(!resp.ok) throw new Error('Fichier manquant sur le serveur : '+f);
+      const blob = await resp.blob();
+      await cache.put(baseUrl+f, new Response(blob, {headers:{'Content-Type': resp.headers.get('Content-Type')||''}}));
+      if(manifest.vignette && f===manifest.vignette){
+        try{ vignetteDataUrl = await trBlobToDataUrl(blob); }catch(e){}
+      }
+    }
+
+    await trIdbPut({
+      slug, baseUrl,
+      titre: manifest.titre || baseUrl,
+      dateAjout: new Date().toISOString(),
+      waypointCount: waypoints.length,
+      vignetteDataUrl
+    });
+    trProgress('Terminé ✓', uniqueFiles.length, uniqueFiles.length);
+    toast('Circuit « '+(manifest.titre||slug)+' » prêt pour un usage hors-ligne ✓','success');
+    document.getElementById('circuit-url-input').value='';
+  }catch(e){
+    toast('Erreur : '+e.message,'error');
+  }finally{
+    trShowProgress(false);
+    trRenderHome();
+  }
+}
+
+async function trRenderHome(){
+  const list = await trIdbGetAll();
+  const el = document.getElementById('circuits-list');
+  if(!list.length){ el.innerHTML='<p class="empty-hint">Aucun circuit chargé pour l\'instant.</p>'; return; }
+  list.sort((a,b)=> (b.dateAjout||'').localeCompare(a.dateAjout||''));
+  el.innerHTML = list.map(c=>`
+    <div class="circuit-card">
+      <div class="circuit-thumb">${c.vignetteDataUrl?'<img src="'+c.vignetteDataUrl+'" alt="">':'<div class="circuit-thumb-ph">🥾</div>'}</div>
+      <div class="circuit-info">
+        <div class="circuit-title">${esc(c.titre)}</div>
+        <div class="circuit-meta">${c.waypointCount} waypoint(s) · ${new Date(c.dateAjout).toLocaleDateString('fr-FR')}</div>
+      </div>
+      <div class="circuit-actions">
+        <button class="btn btn-mini" onclick="trOpenCircuit('${c.slug}')">▶️ Ouvrir</button>
+        <button class="btn btn-mini btn-danger" onclick="trConfirmDelete('${c.slug}')">🗑️ Supprimer</button>
+      </div>
+    </div>`).join('');
+}
+
+async function trConfirmDelete(slug){
+  const list = await trIdbGetAll();
+  const rec = list.find(c=>c.slug===slug);
+  if(!rec) return;
+  if(!confirm('Supprimer le circuit « '+rec.titre+' » et toutes ses données hors-ligne ?')) return;
+  await caches.delete(trCacheName(slug));
+  await trIdbDelete(slug);
+  toast('Circuit supprimé');
+  trRenderHome();
+}
+
+// ── Visionneuse ──────────────────────────────────────────────
+let trView = null;
+
+const TrMBTilesLayer = L.GridLayer.extend({
+  createTile: function(coords, done){
+    const tile=document.createElement('img'); tile.alt='';
+    const db = trView && trView.mbDb;
+    if(!db){ setTimeout(()=>done(null,tile),0); return tile; }
+    const z=coords.z, x=coords.x, nCols=Math.pow(2,z);
+    const xw=((x%nCols)+nCols)%nCols;
+    const y=(nCols-1)-coords.y;
+    try{
+      const stmt=db.prepare('SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1');
+      stmt.bind([z,xw,y]);
+      if(stmt.step()){
+        const row=stmt.getAsObject();
+        const mime = trView.mbFormat==='jpg'?'image/jpeg':trView.mbFormat==='webp'?'image/webp':'image/png';
+        const blob=new Blob([row.tile_data],{type:mime});
+        const url=URL.createObjectURL(blob);
+        tile.onload=()=>{URL.revokeObjectURL(url);done(null,tile);};
+        tile.onerror=()=>{URL.revokeObjectURL(url);done(null,tile);};
+        tile.src=url;
+      } else { setTimeout(()=>done(null,tile),0); }
+      stmt.free();
+    }catch(e){ setTimeout(()=>done(null,tile),0); }
+    return tile;
+  }
+});
+
+function trSetHud(msg){ document.getElementById('cv-hud-msg').textContent = msg||''; }
+
+async function trOpenCircuit(slug){
+  try{
+    const list = await trIdbGetAll();
+    const rec = list.find(c=>c.slug===slug);
+    if(!rec){ toast('Circuit introuvable','error'); return; }
+
+    const cache = await caches.open(trCacheName(slug));
+    async function fromCache(path, asJson){
+      const resp = await cache.match(rec.baseUrl+path);
+      if(!resp) return null;
+      return asJson ? resp.json() : resp.blob();
+    }
+
+    const waypoints = (await fromCache('waypoints.json', true)) || [];
+    const track = (await fromCache('track.json', true)) || [];
+    const mbManifest = await fromCache('mbtiles/manifest.json', true);
+
+    document.getElementById('circuits-home').style.display='none';
+    document.getElementById('circuit-viewer').style.display='flex';
+    document.getElementById('cv-title').textContent = rec.titre;
+
+    trView = { slug, baseUrl:rec.baseUrl, cache, waypoints, track, idx:0, mbDb:null, mbFormat:'jpg', map:null, wpMarkers:[], gpsMarker:null, gpsAccCircle:null, watchId:null, _urls:[] };
+
+    if(mbManifest && mbManifest.chunkCount){
+      trSetHud('Chargement du fond de carte…');
+      const SQL = await trLoadSqlJs();
+      const parts=[]; let total=0;
+      for(let i=0;i<mbManifest.chunkCount;i++){
+        const name='mbtiles/chunk_'+String(i).padStart(3,'0')+'.bin';
+        const blob = await fromCache(name, false);
+        if(!blob) throw new Error('Fragment MBtiles manquant : '+name);
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        parts.push(buf); total+=buf.length;
+      }
+      const merged=new Uint8Array(total); let off=0;
+      parts.forEach(p=>{ merged.set(p,off); off+=p.length; });
+      trView.mbDb = new SQL.Database(merged);
+      trView.mbFormat = mbManifest.format || 'jpg';
+    }
+
+    trInitMap();
+    await trShowSlide(0);
+    trSetHud('');
+  }catch(e){
+    toast('Erreur à l\'ouverture du circuit : '+e.message, 'error');
+    trSetHud('');
+  }
+}
+
+function trInitMap(){
+  if(trView.map){ trView.map.remove(); trView.map=null; }
+  const map = L.map('cv-map',{zoomControl:false,attributionControl:false});
+  trView.map = map;
+
+  if(trView.mbDb){
+    new TrMBTilesLayer({maxZoom:22,minZoom:0}).addTo(map);
+  } else {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+    trSetHud('⚠️ Aucun fond hors-ligne dans ce circuit — carte en ligne uniquement');
+  }
+
+  const track = trView.track;
+  if(track && track.length>1){
+    const ll = track.map(c=>[c[0],c[1]]);
+    L.polyline(ll,{color:'#1a3a0f',weight:8,opacity:.85}).addTo(map);
+    L.polyline(ll,{color:'#3d7a28',weight:5,opacity:.6}).addTo(map);
+    const ants = L.polyline(ll,{color:'#d4f0a0',weight:3,className:'ma-trail'}).addTo(map);
+    (function applyDash(){ const el=ants._path; if(el){ el.setAttribute('stroke-dasharray','10 12'); el.classList.add('ma-trail'); } else requestAnimationFrame(applyDash); })();
+    map.on('zoomend moveend', ()=>requestAnimationFrame(()=>{ const el=ants._path; if(el) el.setAttribute('stroke-dasharray','10 12'); }));
+    map.fitBounds(L.polyline(ll).getBounds(),{padding:[16,16]});
+  } else if(trView.waypoints.length>1){
+    map.fitBounds(L.latLngBounds(trView.waypoints.map(w=>[w.lat,w.lon])),{padding:[24,24]});
+  } else if(trView.waypoints.length===1){
+    map.setView([trView.waypoints[0].lat, trView.waypoints[0].lon], 15);
+  } else {
+    map.setView([46.5,2.5],6);
+  }
+
+  trView.wpMarkers = trView.waypoints.map((wp,i)=>{
+    const icon = L.divIcon({className:'',html:'<div class="wp-pin"><span>'+(i+1)+'</span></div>',iconSize:[26,26],iconAnchor:[13,26]});
+    const m = L.marker([wp.lat,wp.lon],{icon}).addTo(map);
+    m.on('click', ()=>trShowSlide(i));
+    return m;
+  });
+
+  trStartGps(map);
+}
+
+function trStartGps(map){
+  trStopGps();
+  const statusEl = document.getElementById('cv-gps-status');
+  if(!navigator.geolocation){ if(statusEl) statusEl.textContent=''; return; }
+  if(statusEl) statusEl.textContent='📍 recherche…';
+  trView.watchId = navigator.geolocation.watchPosition(function(pos){
+    const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
+    if(!trView.gpsMarker){
+      const icon=L.divIcon({className:'',html:'<div class="gps-pulse"></div><div class="gps-dot"></div>',iconSize:[16,16],iconAnchor:[8,8]});
+      trView.gpsMarker=L.marker([lat,lon],{icon,zIndexOffset:1000,interactive:false}).addTo(map);
+      trView.gpsAccCircle=L.circle([lat,lon],{radius:acc,color:'#2196f3',weight:1,fillColor:'#2196f3',fillOpacity:.08,interactive:false}).addTo(map);
+    } else {
+      trView.gpsMarker.setLatLng([lat,lon]);
+      trView.gpsAccCircle.setLatLng([lat,lon]); trView.gpsAccCircle.setRadius(acc);
+    }
+    if(statusEl) statusEl.textContent='📍 ±'+Math.round(acc)+' m';
+  }, function(){ if(statusEl) statusEl.textContent='📍 indisponible'; }, {enableHighAccuracy:true, maximumAge:5000, timeout:15000});
+}
+function trStopGps(){
+  if(trView && trView.watchId!=null){ navigator.geolocation.clearWatch(trView.watchId); trView.watchId=null; }
+}
+
+function trRevokeSlideUrls(){ (trView._urls||[]).forEach(u=>URL.revokeObjectURL(u)); if(trView) trView._urls=[]; }
+
+async function trShowSlide(i){
+  if(!trView || !trView.waypoints.length) return;
+  trView.idx = Math.max(0, Math.min(i, trView.waypoints.length-1));
+  const wp = trView.waypoints[trView.idx];
+
+  document.getElementById('cv-wp-name').textContent = wp.name || ('Waypoint '+(trView.idx+1));
+  document.getElementById('cv-wp-comment').textContent = wp.comment || '';
+  document.getElementById('cv-counter').textContent = (trView.idx+1)+' / '+trView.waypoints.length;
+
+  trRevokeSlideUrls();
+
+  const imgEl=document.getElementById('cv-photo'), noPhotoEl=document.getElementById('cv-no-photo');
+  imgEl.style.display='none'; noPhotoEl.style.display='block';
+  if(wp.photo){
+    const resp = await trView.cache.match(trView.baseUrl+wp.photo);
+    if(resp){ const blob=await resp.blob(); const url=URL.createObjectURL(blob); trView._urls.push(url); imgEl.src=url; imgEl.style.display='block'; noPhotoEl.style.display='none'; }
+  }
+
+  const audioEl=document.getElementById('cv-audio');
+  audioEl.pause(); audioEl.removeAttribute('src'); audioEl.style.display='none';
+  if(wp.audio){
+    const resp = await trView.cache.match(trView.baseUrl+wp.audio);
+    if(resp){ const blob=await resp.blob(); const url=URL.createObjectURL(new Blob([blob],{type:'audio/mpeg'})); trView._urls.push(url); audioEl.src=url; audioEl.style.display='block'; }
+  }
+
+  const videoEl=document.getElementById('cv-video');
+  videoEl.pause(); videoEl.removeAttribute('src'); videoEl.style.display='none';
+  if(wp.video){
+    const resp = await trView.cache.match(trView.baseUrl+wp.video);
+    if(resp){ const blob=await resp.blob(); const url=URL.createObjectURL(new Blob([blob],{type:'video/mp4'})); trView._urls.push(url); videoEl.src=url; videoEl.style.display='block'; }
+  }
+
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+
+  document.getElementById('cv-prev').disabled = trView.idx===0;
+  document.getElementById('cv-next').disabled = trView.idx===trView.waypoints.length-1;
+
+  if(trView.map && trView.map.flyTo) trView.map.flyTo([wp.lat,wp.lon], Math.max(trView.map.getZoom(),16), {duration:.6});
+}
+function trNext(){ trShowSlide(trView.idx+1); }
+function trPrev(){ trShowSlide(trView.idx-1); }
+function trReadComment(){
+  if(!trView) return;
+  const wp = trView.waypoints[trView.idx];
+  if(!wp || !wp.comment || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(wp.comment); u.lang='fr-FR';
+  window.speechSynthesis.speak(u);
+}
+function toggleCvZoom(){ document.body.classList.toggle('cv-zoomed'); setTimeout(()=>{ if(trView && trView.map) trView.map.invalidateSize(); },320); }
+
+function trCloseViewer(){
+  trStopGps();
+  trRevokeSlideUrls();
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+  if(trView && trView.map){ trView.map.remove(); }
+  if(trView && trView.mbDb){ try{ trView.mbDb.close(); }catch(e){} }
+  trView=null;
+  document.body.classList.remove('cv-zoomed');
+  document.getElementById('circuit-viewer').style.display='none';
+  document.getElementById('circuits-home').style.display='block';
+  trRenderHome();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARTIE "GÉNÉRATEUR" — construit le paquet de circuit (.zip)
+// ══════════════════════════════════════════════════════════════
+
+const genState = { waypoints:[], track:[], mbtilesBuffer:null, mbtilesFormat:'jpg' };
+
+function genLog(msg){
+  const el=document.getElementById('gen-log');
+  el.style.display='block';
+  el.textContent += (el.textContent?'\n':'')+msg;
+  el.scrollTop = el.scrollHeight;
+}
+function genUpdateSummary(){
+  document.getElementById('gen-btn-build').disabled = !genState.waypoints.length;
+}
+
+async function genOnKmzFile(file){
+  if(!file) return;
+  const infoEl=document.getElementById('gen-kmz-info');
+  infoEl.textContent='⏳ Lecture de '+file.name+'…';
+  try{
+    const zip = await JSZip.loadAsync(file);
+    const kmlEntry = zip.file('doc.kml') || Object.values(zip.files).find(f=>/\.kml$/i.test(f.name));
+    if(!kmlEntry) throw new Error('doc.kml introuvable dans le KMZ');
+    const kmlText = await kmlEntry.async('text');
+    const xml = new DOMParser().parseFromString(kmlText,'text/xml');
+    const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+
+    const waypoints=[]; let track=[];
+    for(const pm of placemarks){
+      // La session KMZ exportée par geotour ("💾 Sauvegarder la session en KMZ")
+      // utilise la balise <n> (et non <name>) pour le nom des Placemarks — on
+      // accepte les deux formes pour rester compatible avec d'éventuels autres
+      // exports KML/KMZ standards.
+      const nameEl = pm.getElementsByTagName('n')[0] || pm.getElementsByTagName('name')[0];
+      const name = nameEl ? nameEl.textContent : '';
+      const lineString = pm.getElementsByTagName('LineString')[0];
+      if(lineString){
+        const coordsEl = lineString.getElementsByTagName('coordinates')[0];
+        const coordsText = coordsEl ? coordsEl.textContent : '';
+        track = coordsText.trim().split(/\s+/).filter(Boolean).map(t=>{
+          const parts=t.split(',').map(Number);
+          return [parts[1], parts[0], parts[2]||0];
+        });
+        continue;
+      }
+      const point = pm.getElementsByTagName('Point')[0];
+      if(!point) continue;
+      const coordsEl = point.getElementsByTagName('coordinates')[0];
+      const coordsText = coordsEl ? coordsEl.textContent : '';
+      const parts = coordsText.trim().split(',').map(Number);
+      const lon=parts[0], lat=parts[1], alt=parts[2]||0;
+
+      const descrEl = pm.getElementsByTagName('description')[0];
+      const descrRaw = descrEl ? descrEl.textContent : '';
+      const comment = descrRaw.replace(/<img[^>]*>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'').trim();
+
+      let photoPath=null, audioPath=null, videoPath=null;
+      Array.from(pm.getElementsByTagName('Data')).forEach(d=>{
+        const n=d.getAttribute('name');
+        const vEl=d.getElementsByTagName('value')[0];
+        const v = vEl ? vEl.textContent : '';
+        if(n==='photo') photoPath=v;
+        if(n==='audio') audioPath=v;
+        if(n==='video') videoPath=v;
+      });
+      waypoints.push({name, comment, lat, lon, alt, _photoPath:photoPath, _audioPath:audioPath, _videoPath:videoPath});
+    }
+
+    for(const wp of waypoints){
+      if(wp._photoPath){ const ent=zip.file(wp._photoPath); wp._photoBlob = ent ? await ent.async('blob') : null; }
+      if(wp._audioPath){ const ent=zip.file(wp._audioPath); wp._audioBlob = ent ? await ent.async('blob') : null; }
+      if(wp._videoPath){ const ent=zip.file(wp._videoPath); wp._videoBlob = ent ? await ent.async('blob') : null; }
+    }
+
+    genState.waypoints = waypoints;
+    genState.track = track;
+    infoEl.textContent = '✅ '+waypoints.length+' waypoint(s)'+(track.length>1?', tracé inclus':', pas de tracé continu');
+
+    const titreInput = document.getElementById('gen-titre');
+    if(!titreInput.value) titreInput.value = file.name.replace(/\.kmz$/i,'').replace(/[_-]+/g,' ');
+
+    genUpdateSummary();
+  }catch(e){
+    infoEl.textContent = '❌ '+e.message;
+    toast('Erreur de lecture du KMZ : '+e.message,'error');
+  }
+}
+
+async function genOnMbtilesFile(file){
+  if(!file) return;
+  const infoEl=document.getElementById('gen-mbtiles-info');
+  infoEl.textContent='⏳ Lecture de '+file.name+'…';
+  try{
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const SQL = await trLoadSqlJs();
+    const db = new SQL.Database(buffer);
+    let format='png';
+    try{
+      const meta = db.exec("SELECT name,value FROM metadata");
+      if(meta.length) meta[0].values.forEach(([k,v])=>{ if(k==='format') format=v; });
+    }catch(e){}
+    db.close();
+
+    genState.mbtilesBuffer = buffer;
+    genState.mbtilesFormat = format;
+
+    const mo = (buffer.length/1024/1024).toFixed(1);
+    const maxBytes = 19*1024*1024;
+    const chunks = Math.ceil(buffer.length/maxBytes);
+    infoEl.textContent = '✅ '+file.name+' — '+mo+' Mo, format '+format+' → '+chunks+' fragment(s) de ≤19 Mo';
+    genUpdateSummary();
+  }catch(e){
+    infoEl.textContent = '❌ Fichier .mbtiles invalide';
+    toast('Erreur de lecture du MBtiles : '+e.message,'error');
+  }
+}
+
+function genSplitBuffer(buffer, maxBytes){
+  const chunks=[];
+  for(let off=0; off<buffer.length; off+=maxBytes){
+    chunks.push(buffer.subarray(off, Math.min(off+maxBytes, buffer.length)));
+  }
+  return chunks;
+}
+
+async function genBuildPackage(){
+  const titre = document.getElementById('gen-titre').value.trim() || 'Circuit sans titre';
+  if(!genState.waypoints.length){ toast('Importez d\'abord une session KMZ','error'); return; }
+
+  const btn=document.getElementById('gen-btn-build');
+  btn.disabled=true; const orig=btn.textContent; btn.textContent='⏳ Génération…';
+  document.getElementById('gen-log').textContent=''; document.getElementById('gen-log').style.display='none';
+
+  try{
+    const zip = new JSZip();
+    const photosF=zip.folder('photos'), audioF=zip.folder('audio'), videoF=zip.folder('video');
+    let vignette=null;
+
+    const wpOut = genState.waypoints.map((wp,i)=>{
+      const out={ id:i, name: wp.name||('Waypoint '+(i+1)), comment: wp.comment||'', lat:wp.lat, lon:wp.lon, alt:wp.alt||0, photo:null, audio:null, video:null };
+      if(wp._photoBlob){ const fn='photos/'+i+'.jpg'; photosF.file(i+'.jpg', wp._photoBlob); out.photo=fn; if(!vignette) vignette=fn; }
+      if(wp._audioBlob){ const fn='audio/'+i+'.mp3'; audioF.file(i+'.mp3', wp._audioBlob); out.audio=fn; }
+      if(wp._videoBlob){ const fn='video/'+i+'.mp4'; videoF.file(i+'.mp4', wp._videoBlob); out.video=fn; }
+      return out;
+    });
+    genLog('Waypoints : '+wpOut.length);
+    zip.file('waypoints.json', JSON.stringify(wpOut));
+    zip.file('track.json', JSON.stringify(genState.track||[]));
+
+    let mbChunkCount=0;
+    if(genState.mbtilesBuffer){
+      genLog('Découpage du fond MBtiles…');
+      const chunks = genSplitBuffer(genState.mbtilesBuffer, 19*1024*1024);
+      const mbF = zip.folder('mbtiles');
+      chunks.forEach((c,i)=>{ mbF.file('chunk_'+String(i).padStart(3,'0')+'.bin', c); });
+      mbF.file('manifest.json', JSON.stringify({ format:genState.mbtilesFormat, chunkCount:chunks.length }));
+      mbChunkCount = chunks.length;
+      genLog(mbChunkCount+' fragment(s) MBtiles généré(s)');
+    }
+
+    zip.file('manifest.json', JSON.stringify({
+      titre, generatedAt:new Date().toISOString(),
+      waypointCount: wpOut.length,
+      hasTrack: (genState.track||[]).length>1,
+      hasMbtiles: mbChunkCount>0,
+      vignette
+    }));
+
+    genLog('Compression de l\'archive…');
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const fname = sanitize(titre)+'-terrain.zip';
+
+    if(window.showSaveFilePicker){
+      try{
+        const handle = await window.showSaveFilePicker({ suggestedName:fname, types:[{description:'Archive ZIP', accept:{'application/zip':['.zip']}}] });
+        const w = await handle.createWritable(); await w.write(blob); await w.close();
+        genLog('✅ "'+fname+'" enregistré.');
+        toast('Paquet enregistré ✓','success');
+        btn.disabled=false; btn.textContent=orig; return;
+      }catch(err){
+        if(err.name==='AbortError'){ genLog('Annulé.'); btn.disabled=false; btn.textContent=orig; return; }
+      }
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    genLog('✅ "'+fname+'" téléchargé.');
+    toast('Paquet téléchargé ✓','success');
+  }catch(e){
+    genLog('❌ '+e.message);
+    toast('Erreur : '+e.message,'error');
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+}
+
+// ── Amorçage ─────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  trRenderHome();
+  const params = new URLSearchParams(location.search);
+  const c = params.get('circuit');
+  if(c){
+    const baseUrl = trNormalizeBase(c);
+    const slug = trSlug(baseUrl);
+    const existing = (await trIdbGetAll()).find(r=>r.slug===slug);
+    if(existing){ trOpenCircuit(slug); }
+    else if(confirm('Charger ce circuit pour un usage hors-ligne ?\n'+baseUrl)){
+      await trAddCircuit(c);
+      trOpenCircuit(slug);
+    }
+  }
+});
+</script>
+</body>
+</html>

@@ -218,6 +218,16 @@ body.cv-zoomed #cv-map-wrap{flex-basis:9vh}
       <div class="gen-box">
         <h3>3. Titre du circuit</h3>
         <input id="gen-titre" class="form-input" type="text" placeholder="Ex. Falaise de Rolleville">
+        <div class="form-row" style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1">
+            <label class="form-label" for="gen-secteur-ouest" style="font-size:0.8em">Point ouest</label>
+            <input id="gen-secteur-ouest" class="form-input" type="text" placeholder="Ex. Plage d'Étretat">
+          </div>
+          <div style="flex:1">
+            <label class="form-label" for="gen-secteur-est" style="font-size:0.8em">Point est</label>
+            <input id="gen-secteur-est" class="form-input" type="text" placeholder="Ex. La Manneporte">
+          </div>
+        </div>
       </div>
 
       <div class="gen-box">
@@ -695,6 +705,14 @@ async function genOnKmzFile(file){
     const titreInput = document.getElementById('gen-titre');
     if(!titreInput.value) titreInput.value = file.name.replace(/\.kmz$/i,'').replace(/[_-]+/g,' ');
 
+    // Pré-remplissage du secteur (point ouest/est) à partir du 1er/dernier
+    // waypoint — souvent parlant ("Plage d'Étretat"), mais parfois générique
+    // ("Départ") : laissé éditable, jamais écrasé si déjà saisi.
+    const ouestInput = document.getElementById('gen-secteur-ouest');
+    const estInput = document.getElementById('gen-secteur-est');
+    if(!ouestInput.value && waypoints.length) ouestInput.value = waypoints[0].name || '';
+    if(!estInput.value && waypoints.length > 1) estInput.value = waypoints[waypoints.length-1].name || '';
+
     genUpdateSummary();
   }catch(e){
     infoEl.textContent = '❌ '+e.message;
@@ -781,6 +799,25 @@ async function genBuildPackage(){
       hasMbtiles: mbChunkCount>0,
       vignette
     }));
+
+    // coupe.json : métadonnées au format attendu par le catalogue externe
+    // "albatre" (bernardhoyez.github.io/albatre). Fichier distinct de
+    // manifest.json (qui reste au format interne de terrain, utilisé par
+    // l'onglet Suivi) — même si les deux sont générés à partir des mêmes
+    // données, pour ne pas coupler les deux consommateurs.
+    const secteurOuest = document.getElementById('gen-secteur-ouest').value.trim();
+    const secteurEst = document.getElementById('gen-secteur-est').value.trim();
+    zip.file('coupe.json', JSON.stringify({
+      titre,
+      secteur: {
+        point_ouest: secteurOuest || (wpOut.length ? wpOut[0].name : null),
+        point_est: secteurEst || (wpOut.length > 1 ? wpOut[wpOut.length - 1].name : null)
+      },
+      vignette,
+      date: new Date().toISOString().slice(0, 10),
+      nb_points: wpOut.length
+    }));
+    genLog('coupe.json généré (catalogue albatre)');
 
     genLog('Compression de l\'archive…');
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });

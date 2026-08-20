@@ -43,7 +43,9 @@ Outil de préparation (à utiliser chez soi, en ligne, avant la sortie) qui asse
 2. **Fichier .mbtiles** (optionnel) — produit par le générateur MBtiles de geotour (ou
    ign2mbt). Automatiquement découpé en fragments de **≤19 Mo** (marge de sécurité sous la
    limite de 20 Mo par fichier élémentaire).
-3. **Titre** du circuit.
+3. **Titre** du circuit, et **Point ouest / Point est** (secteur littoral couvert —
+   pré-remplis à partir du 1er/dernier waypoint importé, mais librement modifiables :
+   utile quand ces waypoints s'appellent juste « Départ »/« Arrivée »).
 4. **Générer le paquet** produit une archive `.zip` prête à déployer.
 
 ---
@@ -95,6 +97,12 @@ fournit pas sur mobile.
   `photos/`/`audio/`/`video/`, et `mbtiles/manifest.json` + `mbtiles/chunk_NNN.bin`
   (fragments bruts du fichier SQLite MBtiles, réassemblés côté client en un seul buffer
   avant d'être ouverts par sql.js — identique au lecteur MBtiles de geotour).
+- Le paquet contient aussi un `coupe.json` (titre, secteur point_ouest/point_est,
+  vignette, date, nb_points), généré automatiquement en plus du `manifest.json` —
+  destiné à être lu par un site catalogue externe tel qu'
+  [albatre](https://bernardhoyez.github.io/albatre) (fetch cross-origin, voir son
+  propre README). Format distinct de `manifest.json` (qui reste réservé à l'usage
+  interne de l'onglet Suivi) pour ne pas coupler les deux consommateurs.
 - **Stockage sur l'appareil** : Cache Storage (un cache par circuit, nommé
   `terrain-circuit-<slug>`, contenant tous les fichiers du paquet) + IndexedDB (métadonnées
   des circuits : titre, vignette, date, nombre de waypoints).

@@ -8,7 +8,7 @@
 // sortie terrain). Seuls les anciens caches "terrain-cache-*" (le shell applicatif)
 // sont purgés ci-dessous.
 
-const CACHE_NAME = 'terrain-cache-v2';
+const CACHE_NAME = 'terrain-cache-v3';
 
 const PRECACHE_ASSETS = [
   './',

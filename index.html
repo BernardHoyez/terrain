@@ -813,6 +813,11 @@ async function genBuildPackage(){
         point_ouest: secteurOuest || (wpOut.length ? wpOut[0].name : null),
         point_est: secteurEst || (wpOut.length > 1 ? wpOut[wpOut.length - 1].name : null)
       },
+      // Coordonnées du 1er waypoint, pour le placement automatique du
+      // marqueur sur la carte du catalogue albatre — pas de saisie
+      // manuelle, extrait directement des données du circuit.
+      lat: wpOut.length ? wpOut[0].lat : null,
+      lon: wpOut.length ? wpOut[0].lon : null,
       vignette,
       date: new Date().toISOString().slice(0, 10),
       nb_points: wpOut.length

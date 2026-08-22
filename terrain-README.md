@@ -98,6 +98,7 @@ fournit pas sur mobile.
   (fragments bruts du fichier SQLite MBtiles, réassemblés côté client en un seul buffer
   avant d'être ouverts par sql.js — identique au lecteur MBtiles de geotour).
 - Le paquet contient aussi un `coupe.json` (titre, secteur point_ouest/point_est,
+  lat/lon du 1er waypoint,
   vignette, date, nb_points), généré automatiquement en plus du `manifest.json` —
   destiné à être lu par un site catalogue externe tel qu'
   [albatre](https://bernardhoyez.github.io/albatre) (fetch cross-origin, voir son
